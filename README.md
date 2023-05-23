@@ -1,140 +1,86 @@
-## Laboratory work IX
+# lab-09
 
-Данная лабораторная работа посвещена изучению процесса создания артефактов на примере **Github Release**
+We will use Windows for making thid laboratory work
 
-```sh
-$ open https://help.github.com/articles/creating-releases/
+First we install all the necessary software:
+- vagrant
+- PuTTY
+- Virtual Box
+
+Next we create a `Vagrantfile`
+
+Contents of `Vagrantfile`:
 ```
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
 
-## Tasks
+require 'json'
+require 'yaml'
 
-- [ ] 1. Создать публичный репозиторий с названием **lab09** на сервисе **GitHub**
-- [ ] 2. Ознакомиться со ссылками учебного материала
-- [ ] 3. Получить токен для доступа к репозиториям сервиса **GitHub**
-- [ ] 4. Выполнить инструкцию учебного материала
-- [ ] 5. Составить отчет и отправить ссылку личным сообщением в **Slack**
+VAGRANTFILE_API_VERSION ||= "2"
+confDir = $confDir ||= File.expand_path(File.dirname(__FILE__))
 
-## Tutorial
+homesteadYamlPath = confDir + "/Homestead.yaml"
+homesteadJsonPath = confDir + "/Homestead.json"
+afterScriptPath = confDir + "/after.sh"
+customizationScriptPath = confDir + "/user-customizations.sh"
+aliasesPath = confDir + "/aliases"
 
-```sh
-$ export GITHUB_TOKEN=<полученный_токен>
-$ export GITHUB_USERNAME=<имя_пользователя>
-$ export PACKAGE_MANAGER=<пакетный менеджер>
-$ export GPG_PACKAGE_NAME=<gpg2|gpg>
+require File.expand_path(File.dirname(__FILE__) + '/scripts/homestead.rb')
+
+Vagrant.require_version '>= 2.2.4'
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+    if File.exist? aliasesPath then
+        config.vm.provision "file", source: aliasesPath, destination: "/tmp/bash_aliases"
+        config.vm.provision "handle_aliases", type: "shell" do |s|
+            s.inline = "awk '{ sub(\"\r$\", \"\"); print }' /tmp/bash_aliases > /home/vagrant/.bash_aliases && chown vagrant:vagrant /home/vagrant/.bash_aliases"
+        end
+    end
+
+    if File.exist? homesteadYamlPath then
+        settings = YAML::load(File.read(homesteadYamlPath))
+    elsif File.exist? homesteadJsonPath then
+        settings = JSON::parse(File.read(homesteadJsonPath))
+    else
+        abort "Homestead settings file not found in #{confDir}"
+    end
+
+    Homestead.configure(config, settings)
+
+    if File.exist? afterScriptPath then
+        config.vm.provision "Run after.sh", type: "shell", path: afterScriptPath, privileged: false, keep_color: true
+    end
+
+    if File.exist? customizationScriptPath then
+        config.vm.provision "Run customize script", type: "shell", path: customizationScriptPath, privileged: false, keep_color: true
+    end
+
+    if Vagrant.has_plugin?('vagrant-hostsupdater')
+        config.hostsupdater.remove_on_suspend = false
+        config.hostsupdater.aliases = settings['sites'].map { |site| site['map'] }
+    elsif Vagrant.has_plugin?('vagrant-hostmanager')
+        config.hostmanager.enabled = true
+        config.hostmanager.manage_host = true
+        config.hostmanager.aliases = settings['sites'].map { |site| site['map'] }
+    elsif Vagrant.has_plugin?('vagrant-goodhosts')
+        config.goodhosts.aliases = settings['sites'].map { |site| site['map'] }
+    end
+
+    if Vagrant.has_plugin?('vagrant-notify-forwarder')
+        config.notify_forwarder.enable = true
+    end
+end
 ```
+![Screenshot 2023-05-03 13-29-59](https://user-images.githubusercontent.com/125737299/235969195-b0ceb67d-4e26-46ec-9b02-f7c2756534fa.png)
 
-```sh
-# for *-nix system
-$ $PACKAGE_MANAGER install xclip
-$ alias gsed=sed
-$ alias pbcopy='xclip -selection clipboard'
-$ alias pbpaste='xclip -selection clipboard -o'
-```
+Now we use PuTTY to generate SSH keys (add them to ~/.ssh). And then we connect to the virtual machine launched using Vagrant
 
-```sh
-$ cd ${GITHUB_USERNAME}/workspace
-$ pushd .
-$ source scripts/activate
-$ go get github.com/aktau/github-release
-```
+![Screenshot 2023-05-03 13-31-10](https://user-images.githubusercontent.com/125737299/235969995-462ecafc-d639-44c3-b27a-db626fd5da80.png)
+![Screenshot 2023-05-03 13-30-05](https://user-images.githubusercontent.com/125737299/235969657-d981893d-ea2f-4141-bb49-6563b66682cb.png)
+![Screenshot 2023-05-03 13-30-09](https://user-images.githubusercontent.com/125737299/235969667-5e3fc1dc-2992-482e-9f9f-e8a39bb33aef.png)
 
-```sh
-$ git clone https://github.com/${GITHUB_USERNAME}/lab08 projects/lab09
-$ cd projects/lab09
-$ git remote remove origin
-$ git remote add origin https://github.com/${GITHUB_USERNAME}/lab09
-```
+When trying to change the contents of the `Code` folder through the terminal of the virtual machine, its contents are also changed on the host computer
 
-```sh
-$ gsed -i 's/lab08/lab09/g' README.md
-```
+![Screenshot 2023-05-03 13-30-17](https://user-images.githubusercontent.com/125737299/235969932-e289f5ce-3f29-4989-9c41-0d190cf98539.png)
 
-```sh
-$ $PACKAGE_MANAGER install ${GPG_PACKAGE_NAME}
-$ gpg --list-secret-keys --keyid-format LONG
-$ gpg --full-generate-key
-$ gpg --list-secret-keys --keyid-format LONG
-$ gpg -K ${GITHUB_USERNAME}
-$ GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep ssb | tail -1 | awk '{print $2}' | awk -F'/' '{print $2}')
-$ GPG_SEC_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | tail -1 | awk '{print $2}' | awk -F'/' '{print $2}')
-$ gpg --armor --export ${GPG_KEY_ID} | pbcopy
-$ pbpaste
-$ open https://github.com/settings/keys
-$ git config user.signingkey ${GPG_SEC_KEY_ID}
-$ git config gpg.program gpg
-```
-
-```sh
-$ test -r ~/.bash_profile && echo 'export GPG_TTY=$(tty)' >> ~/.bash_profile
-$ echo 'export GPG_TTY=$(tty)' >> ~/.profile
-```
-
-```sh
-$ cmake -H. -B_build -DCPACK_GENERATOR="TGZ"
-$ cmake --build _build --target package
-```
-
-```sh
-$ travis login --auto
-$ travis enable
-```
-
-```sh
-$ git tag -s v0.1.0.0
-$ git tag -v v0.1.0.0
-$ git show v0.1.0.0
-$ git push origin master --tags
-```
-
-```sh
-$ github-release --version
-$ github-release info -u ${GITHUB_USERNAME} -r lab09
-$ github-release release \
-    --user ${GITHUB_USERNAME} \
-    --repo lab09 \
-    --tag v0.1.0.0 \
-    --name "libprint" \
-    --description "my first release"
-```
-
-```sh
-$ export PACKAGE_OS=`uname -s` PACKAGE_ARCH=`uname -m` 
-$ export PACKAGE_FILENAME=print-${PACKAGE_OS}-${PACKAGE_ARCH}.tar.gz
-$ github-release upload \
-    --user ${GITHUB_USERNAME} \
-    --repo lab09 \
-    --tag v0.1.0.0 \
-    --name "${PACKAGE_FILENAME}" \
-    --file _build/*.tar.gz
-```
-
-```sh
-$ github-release info -u ${GITHUB_USERNAME} -r lab09
-$ wget https://github.com/${GITHUB_USERNAME}/lab09/releases/download/v0.1.0.0/${PACKAGE_FILENAME}
-$ tar -ztf ${PACKAGE_FILENAME}
-```
-
-## Report
-
-```sh
-$ popd
-$ export LAB_NUMBER=09
-$ git clone https://github.com/tp-labs/lab${LAB_NUMBER} tasks/lab${LAB_NUMBER}
-$ mkdir reports/lab${LAB_NUMBER}
-$ cp tasks/lab${LAB_NUMBER}/README.md reports/lab${LAB_NUMBER}/REPORT.md
-$ cd reports/lab${LAB_NUMBER}
-$ edit REPORT.md
-$ gistup -m "lab${LAB_NUMBER}"
-```
-
-## Links
-
-- [Create Release](https://help.github.com/articles/creating-releases/)
-- [Get GitHub Token](https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/)
-- [Signing Commits](https://help.github.com/articles/signing-commits-with-gpg/)
-- [Go Setup](http://www.golangbootcamp.com/book/get_setup)
-- [github-release](https://github.com/aktau/github-release)
-
-```
-Copyright (c) 2015-2021 The ISC Authors
-```
